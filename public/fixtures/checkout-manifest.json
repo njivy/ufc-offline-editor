@@ -1,7 +1,7 @@
 {
   "format": "ufc-offline-checkout-pack",
   "formatVersion": 1,
-  "exportedAt": "2026-09-21T17:00:00-07:00",
+  "exportedAt": "2026-09-21T18:00:00-07:00",
   "baseVersionId": "a093a449-9220-45e0-866a-67d3139af067",
   "designation": "UFC 1-200-01",
   "marking": null,
@@ -18,7 +18,19 @@
       "expiresAt": "2026-10-21T16:00:00-07:00"
     },
     {
-      "sectionId": "a8c1316a-ad43-4600-a323-40f874ea6096",
+      "sectionId": "eb262894-f406-4b6c-905c-1bd602a27265",
+      "assigneeId": "cms-user-demo-sme-001",
+      "lockedAt": "2026-09-21T16:00:00-07:00",
+      "expiresAt": "2026-10-21T16:00:00-07:00"
+    },
+    {
+      "sectionId": "cc629512-43f5-4990-9b50-d981a592ba21",
+      "assigneeId": "cms-user-demo-sme-001",
+      "lockedAt": "2026-09-21T16:00:00-07:00",
+      "expiresAt": "2026-10-21T16:00:00-07:00"
+    },
+    {
+      "sectionId": "e561eeb7-68da-49a6-a711-20f2b0fab281",
       "assigneeId": "cms-user-demo-sme-001",
       "lockedAt": "2026-09-21T16:00:00-07:00",
       "expiresAt": "2026-10-21T16:00:00-07:00"

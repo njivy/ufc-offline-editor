@@ -28,6 +28,7 @@ export async function importCheckoutPack(file) {
       lockedIds: new Set(),
       warnings,
       sourceLabel: file.name,
+      mediaBlobs: new Map(),
     };
   }
 
@@ -96,6 +97,26 @@ export async function importCheckoutPack(file) {
     }
   }
 
+  // Optional media/ blobs for IMAGE display / proposal media ops
+  const mediaBlobs = new Map();
+  for (const p of Object.keys(zip.files)) {
+    if (zip.files[p].dir) continue;
+    const m = p.match(/(?:^|\/)media\/(.+)$/i);
+    if (!m) continue;
+    const rel = m[1].replace(/^\/+/, '');
+    const bytes = await zip.files[p].async('uint8array');
+    const lower = rel.toLowerCase();
+    let mime = 'application/octet-stream';
+    if (lower.endsWith('.png')) mime = 'image/png';
+    else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mime = 'image/jpeg';
+    else if (lower.endsWith('.gif')) mime = 'image/gif';
+    else if (lower.endsWith('.webp')) mime = 'image/webp';
+    else if (lower.endsWith('.svg')) mime = 'image/svg+xml';
+    mediaBlobs.set(rel, new Blob([bytes], { type: mime }));
+    // Also index without leading folders variants by basename path as stored
+    mediaBlobs.set(rel.replace(/^\.\//, ''), new Blob([bytes], { type: mime }));
+  }
+
   return {
     content,
     rawContent,
@@ -103,6 +124,7 @@ export async function importCheckoutPack(file) {
     lockedIds,
     warnings,
     sourceLabel: file.name,
+    mediaBlobs,
   };
 }
 

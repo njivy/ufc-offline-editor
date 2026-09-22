@@ -1,13 +1,14 @@
 {
   "name": "ufc-offline-editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "build:fixture": "node scripts/build-sample-checkout.mjs"
+    "build:fixture": "node scripts/build-sample-checkout.mjs",
+    "test:roundtrip": "node scripts/roundtrip-check.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.0"
@@ -15,5 +16,5 @@
   "dependencies": {
     "jszip": "^3.10.2"
   },
-  "description": "Offline static editor for UFC checkout/proposal packs (proposals only — not published authority)"
+  "description": "Offline static editor for UFC checkout/proposal packs (proposals only \u2014 not published authority)"
 }

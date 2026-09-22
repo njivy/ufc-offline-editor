@@ -1,0 +1,23 @@
+{
+  "format": "ufc-offline-checkout-pack",
+  "formatVersion": 1,
+  "exportedAt": "2026-09-21T18:00:00-07:00",
+  "baseVersionId": "00000000-demo-4000-8000-imagepack0001",
+  "designation": "UFC DEMO-IMG",
+  "marking": null,
+  "assignee": {
+    "id": "cms-user-demo-sme-001",
+    "displayName": "Demo SME",
+    "email": "demo.sme@example.mil"
+  },
+  "locks": [
+    {
+      "sectionId": "sec-demo-img-present",
+      "assigneeId": "cms-user-demo-sme-001",
+      "lockedAt": "2026-09-21T16:00:00-07:00",
+      "expiresAt": "2026-10-21T16:00:00-07:00"
+    }
+  ],
+  "contentPath": "content.json",
+  "mediaRoot": "media/"
+}
