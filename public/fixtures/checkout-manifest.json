@@ -1,0 +1,29 @@
+{
+  "format": "ufc-offline-checkout-pack",
+  "formatVersion": 1,
+  "exportedAt": "2026-09-21T17:00:00-07:00",
+  "baseVersionId": "a093a449-9220-45e0-866a-67d3139af067",
+  "designation": "UFC 1-200-01",
+  "marking": null,
+  "assignee": {
+    "id": "cms-user-demo-sme-001",
+    "displayName": "Demo SME",
+    "email": "demo.sme@example.mil"
+  },
+  "locks": [
+    {
+      "sectionId": "b79ba2d9-6f1a-494f-b168-6f84fcaf6a98",
+      "assigneeId": "cms-user-demo-sme-001",
+      "lockedAt": "2026-09-21T16:00:00-07:00",
+      "expiresAt": "2026-10-21T16:00:00-07:00"
+    },
+    {
+      "sectionId": "a8c1316a-ad43-4600-a323-40f874ea6096",
+      "assigneeId": "cms-user-demo-sme-001",
+      "lockedAt": "2026-09-21T16:00:00-07:00",
+      "expiresAt": "2026-10-21T16:00:00-07:00"
+    }
+  ],
+  "contentPath": "content.json",
+  "mediaRoot": "media/"
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ufc-offline-editor.local/schemas/checkout-manifest.schema.json",
+  "title": "ufc-offline-checkout-pack",
+  "type": "object",
+  "required": ["format", "formatVersion", "baseVersionId", "assignee", "locks", "contentPath"],
+  "properties": {
+    "format": { "const": "ufc-offline-checkout-pack" },
+    "formatVersion": { "const": 1 },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "baseVersionId": { "type": "string", "minLength": 1 },
+    "designation": { "type": "string" },
+    "marking": { "type": ["string", "null"] },
+    "assignee": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" }
+      }
+    },
+    "locks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sectionId", "assigneeId", "lockedAt"],
+        "properties": {
+          "sectionId": { "type": "string" },
+          "assigneeId": { "type": "string" },
+          "lockedAt": { "type": "string" },
+          "expiresAt": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "contentPath": { "type": "string" },
+    "mediaRoot": { "type": "string" }
+  },
+  "additionalProperties": true
+}

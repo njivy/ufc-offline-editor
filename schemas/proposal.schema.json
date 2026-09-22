@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ufc-offline-editor.local/schemas/proposal.schema.json",
+  "title": "ufc-offline-proposal-pack",
+  "type": "object",
+  "required": [
+    "format",
+    "formatVersion",
+    "proposalId",
+    "createdAt",
+    "updatedAt",
+    "baseVersionId",
+    "author",
+    "changes"
+  ],
+  "properties": {
+    "format": { "const": "ufc-offline-proposal-pack" },
+    "formatVersion": { "const": 1 },
+    "proposalId": { "type": "string" },
+    "createdAt": { "type": "string" },
+    "updatedAt": { "type": "string" },
+    "baseVersionId": { "type": "string" },
+    "designation": { "type": "string" },
+    "marking": { "type": ["string", "null"] },
+    "author": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" }
+      }
+    },
+    "checkout": {
+      "type": "object",
+      "properties": {
+        "assigneeId": { "type": "string" },
+        "lockSectionIds": { "type": "array", "items": { "type": "string" } },
+        "lockExpiresAt": { "type": ["string", "null"] }
+      }
+    },
+    "contentPath": { "type": "string" },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["changeId", "target", "before", "after", "rationale", "author", "createdAt", "updatedAt"],
+        "properties": {
+          "changeId": { "type": "string" },
+          "target": {
+            "type": "object",
+            "required": ["sectionId", "granularity"],
+            "properties": {
+              "sectionId": { "type": "string" },
+              "granularity": { "const": "section" }
+            }
+          },
+          "before": {
+            "type": "object",
+            "required": ["contentHash"],
+            "properties": {
+              "contentHash": { "type": "string", "pattern": "^sha256:[0-9a-f]+$" },
+              "snippet": { "type": "string" }
+            }
+          },
+          "after": {
+            "type": "object",
+            "required": ["section"],
+            "properties": {
+              "section": { "type": "object" }
+            }
+          },
+          "rationale": { "type": "string", "minLength": 1 },
+          "author": { "type": "object" },
+          "createdAt": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        }
+      }
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["op", "path"],
+        "properties": {
+          "op": { "enum": ["add", "replace", "delete"] },
+          "path": { "type": "string" },
+          "packPath": { "type": "string" },
+          "contentHash": { "type": "string" }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
