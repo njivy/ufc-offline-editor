@@ -1,6 +1,6 @@
 {
   "name": "ufc-offline-editor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,5 +19,5 @@
   "dependencies": {
     "jszip": "^3.10.2"
   },
-  "description": "Offline static editor for UFC checkout/proposal packs (proposals only \u2014 not published authority)"
+  "description": "Offline static editor for UFC checkout/proposal packs (proposals only — not published authority)"
 }

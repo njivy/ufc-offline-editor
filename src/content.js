@@ -205,23 +205,40 @@ function applyDraftToNode(node, draft) {
     node.content = String(draft.content);
   }
 
-  if (Array.isArray(draft.sentences) && Array.isArray(node.sentences)) {
-    const byId = new Map(draft.sentences.map((s) => [s.id, s]));
-    for (const sent of node.sentences) {
-      const d = byId.get(sent.id);
-      if (!d) continue;
-      sent.text = String(d.text ?? '');
-      const prev = sent.formatting && typeof sent.formatting === 'object' ? { ...sent.formatting } : {};
-      if (d.paragraphType !== undefined) prev.paragraphType = d.paragraphType;
-      if (d.alignment !== undefined) prev.alignment = d.alignment;
-      if (d.isBullet !== undefined) prev.isBullet = !!d.isBullet;
-      if (d.listType !== undefined) prev.listType = d.listType;
-      if (d.indentLevel !== undefined) {
-        const n = Number(d.indentLevel);
-        prev.indentLevel = Number.isFinite(n) ? n : 0;
+  if (Array.isArray(draft.sentences)) {
+    const prevById = new Map((node.sentences || []).map((s) => [s.id, s]));
+    node.sentences = draft.sentences.map((d) => {
+      const prev = prevById.get(d.id);
+      if (prev) {
+        const formatting =
+          prev.formatting && typeof prev.formatting === 'object' ? { ...prev.formatting } : {};
+        if (d.paragraphType !== undefined) formatting.paragraphType = d.paragraphType;
+        if (d.alignment !== undefined) formatting.alignment = d.alignment;
+        if (d.isBullet !== undefined) formatting.isBullet = !!d.isBullet;
+        if (d.listType !== undefined) formatting.listType = d.listType;
+        if (d.indentLevel !== undefined) {
+          const n = Number(d.indentLevel);
+          formatting.indentLevel = Number.isFinite(n) ? n : 0;
+        }
+        return {
+          ...prev,
+          id: d.id,
+          text: String(d.text ?? ''),
+          formatting,
+        };
       }
-      sent.formatting = prev;
-    }
+      return {
+        id: d.id,
+        text: String(d.text ?? ''),
+        formatting: {
+          paragraphType: d.paragraphType || 'Normal',
+          alignment: d.alignment || '',
+          isBullet: !!d.isBullet,
+          listType: d.listType || '',
+          indentLevel: Number.isFinite(Number(d.indentLevel)) ? Number(d.indentLevel) : 0,
+        },
+      };
+    });
   }
 
   if (Array.isArray(draft.commentary) && Array.isArray(node.commentary)) {

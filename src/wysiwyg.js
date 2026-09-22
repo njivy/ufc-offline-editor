@@ -8,6 +8,7 @@ import {
   normalizeMediaPath,
   resolveMediaUrl,
   draftFromSection,
+  uid,
 } from './content.js';
 
 /** Light sanitize for trusted CIM HTML snippets (no DOM required). */
@@ -18,6 +19,30 @@ export function lightSanitizeHtml(html) {
     .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
     .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
     .replace(/\shref\s*=\s*(['"])\s*javascript:[^'"]*\1/gi, ' href="#"');
+}
+
+/**
+ * Sanitize sentence HTML to strong|b|em|i|br only; escape all other markup.
+ * Safe to inject into WYSIWYG hosts.
+ */
+export function sanitizeSentenceHtml(input) {
+  if (!input || typeof input !== 'string') return '';
+  // Escape everything, then restore allowed tags (attrs are not restored).
+  let s = escapeHtml(input);
+  s = s.replace(
+    /&lt;(\/?)(strong|b|em|i)(?:\s[\s\S]*?)?&gt;/gi,
+    (_, slash, tag) => `<${slash}${tag.toLowerCase()}>`,
+  );
+  s = s.replace(/&lt;br(?:\s[\s\S]*?)?\/?&gt;/gi, '<br>');
+  return s;
+}
+
+/** Inner HTML of a sentence host with nested lists removed, then sanitized. */
+function sentenceHtmlFromEl(el) {
+  if (!el) return '';
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll('ul, ol').forEach((n) => n.remove());
+  return sanitizeSentenceHtml((clone.innerHTML || '').replace(/\u00a0/g, ' ').trim());
 }
 
 function ceAttr(editable) {
@@ -102,7 +127,7 @@ export function renderBulletListHtml(items, editable) {
       .map((n) => {
         const s = n.sentence;
         const nested = n.children.length ? renderNodes(n.children) : '';
-        return `<li data-sentence-id="${escapeHtml(s.id)}" data-indent="${indentOf(s)}"${alignData(s.alignment)}${alignStyle(s.alignment)}${ceAttr(editable)}>${escapeHtml(s.text || '')}${nested}</li>`;
+        return `<li data-sentence-id="${escapeHtml(s.id)}" data-indent="${indentOf(s)}"${alignData(s.alignment)}${alignStyle(s.alignment)}${ceAttr(editable)}>${sanitizeSentenceHtml(s.text || '')}${nested}</li>`;
       })
       .join('');
     return `<ul class="wysiwyg-list">${lis}</ul>`;
@@ -117,7 +142,7 @@ function renderSentencesHtml(sentences, editable) {
     .map((g) => {
       if (g.kind === 'ul') return renderBulletListHtml(g.items, editable);
       const s = g.items[0];
-      return `<p class="wysiwyg-p" data-sentence-id="${escapeHtml(s.id)}" data-indent="${indentOf(s)}"${alignData(s.alignment)}${alignStyle(s.alignment)}${ceAttr(editable)}>${escapeHtml(s.text || '')}</p>`;
+      return `<p class="wysiwyg-p" data-sentence-id="${escapeHtml(s.id)}" data-indent="${indentOf(s)}"${alignData(s.alignment)}${alignStyle(s.alignment)}${ceAttr(editable)}>${sanitizeSentenceHtml(s.text || '')}</p>`;
     })
     .join('');
 }
@@ -338,15 +363,20 @@ export function parseWysiwygDom(rootEl, baseSection) {
   if (contentEl && draft.content !== null) draft.content = textOf(contentEl);
 
   const byId = new Map((draft.sentences || []).map((s) => [s.id, { ...s }]));
-  const order = [];
+  const rebuilt = [];
+  const seen = new Set();
 
   root.querySelectorAll('[data-sentence-id]').forEach((el) => {
-    const id = el.getAttribute('data-sentence-id');
+    let id = el.getAttribute('data-sentence-id');
     if (!id) return;
-    // Only leaf sentence hosts: skip if this element contains nested [data-sentence-id]
-    // Wait — nested li each have their own id; parent li text includes child text unless we strip.
+    if (seen.has(id)) {
+      // Duplicate id in DOM — mint a new one for the extra host.
+      id = uid();
+      el.setAttribute('data-sentence-id', id);
+    }
+    seen.add(id);
+
     const prev = byId.get(id);
-    if (!prev) return;
 
     const inList = !!el.closest('ul, ol');
     const tag = el.tagName;
@@ -356,10 +386,10 @@ export function parseWysiwygDom(rootEl, baseSection) {
     let indentLevel = indentAttr != null && indentAttr !== '' ? Number(indentAttr) : listDepth(el, root);
     if (!Number.isFinite(indentLevel)) indentLevel = 0;
 
-    const alignment = readAlignment(el) || prev.alignment || '';
+    const alignment = readAlignment(el) || prev?.alignment || '';
 
-    let paragraphType = prev.paragraphType || '';
-    let listType = prev.listType || '';
+    let paragraphType = prev?.paragraphType || '';
+    let listType = prev?.listType || '';
     let isBullet = bullet;
 
     if (bullet) {
@@ -372,24 +402,37 @@ export function parseWysiwygDom(rootEl, baseSection) {
       isBullet = false;
       listType = listType && !/^bullet$/i.test(listType) ? listType : '';
       if (/list\s*bullet/i.test(paragraphType)) paragraphType = 'Normal';
+      if (!paragraphType) paragraphType = 'Normal';
     }
 
-    const text = plainTextPrefer(el);
+    const text = sentenceHtmlFromEl(el);
 
-    byId.set(id, {
-      ...prev,
-      text,
-      paragraphType,
-      alignment,
-      isBullet,
-      listType,
-      indentLevel,
-    });
-    if (!order.includes(id)) order.push(id);
+    if (prev) {
+      rebuilt.push({
+        ...prev,
+        id,
+        text,
+        paragraphType,
+        alignment,
+        isBullet,
+        listType,
+        indentLevel,
+      });
+    } else {
+      rebuilt.push({
+        id,
+        text,
+        paragraphType: paragraphType || (bullet ? 'List Bullet' : 'Normal'),
+        alignment,
+        isBullet,
+        listType: listType || (bullet ? 'bullet' : ''),
+        indentLevel,
+      });
+    }
   });
 
-  // Preserve original sentence order from draft.
-  draft.sentences = (draft.sentences || []).map((s) => byId.get(s.id) || s);
+  // Rebuild from DOM order: known ids merged; new hosts appended; omitted hosts deleted.
+  draft.sentences = rebuilt;
 
   draft.commentary = (draft.commentary || []).map((item, i) => {
     const box = root.querySelector(`[data-note-kind="commentary"][data-note-idx="${i}"]`);
@@ -439,6 +482,9 @@ export function parseWysiwygDom(rootEl, baseSection) {
 /** Toolbar HTML for locked editing. */
 export function renderWysiwygToolbarHtml() {
   return `<div class="wysiwyg-toolbar" role="toolbar" aria-label="Formatting">
+    <button type="button" data-wy-cmd="bold" title="Bold"><strong>B</strong></button>
+    <button type="button" data-wy-cmd="italic" title="Italic"><em>I</em></button>
+    <span class="wysiwyg-toolbar-sep"></span>
     <button type="button" data-wy-cmd="paragraph" title="Paragraph">¶ Paragraph</button>
     <button type="button" data-wy-cmd="bullet" title="Bullet list">• Bullet</button>
     <button type="button" data-wy-cmd="indent" title="Indent">Indent</button>
@@ -447,6 +493,9 @@ export function renderWysiwygToolbarHtml() {
     <button type="button" data-wy-cmd="align-left" title="Align left">Left</button>
     <button type="button" data-wy-cmd="align-center" title="Align center">Center</button>
     <button type="button" data-wy-cmd="align-right" title="Align right">Right</button>
+    <span class="wysiwyg-toolbar-sep"></span>
+    <button type="button" data-wy-cmd="add-sentence" title="Add sentence">+ Sentence</button>
+    <button type="button" data-wy-cmd="delete-sentence" title="Delete sentence">− Sentence</button>
   </div>`;
 }
 
@@ -484,6 +533,29 @@ export function bindWysiwygToolbar(toolbarEl, rootEl) {
     ev.preventDefault();
     const cmd = btn.getAttribute('data-wy-cmd');
     const host = sentenceHostFromSelection(rootEl);
+
+    if (cmd === 'bold' || cmd === 'italic') {
+      const doc = rootEl.ownerDocument;
+      if (host) {
+        try { host.focus(); } catch { /* ignore */ }
+      }
+      try {
+        doc.execCommand(cmd === 'bold' ? 'bold' : 'italic', false, null);
+      } catch {
+        wrapSelectionInline(rootEl, cmd === 'bold' ? 'strong' : 'em');
+      }
+      return;
+    }
+
+    if (cmd === 'add-sentence') {
+      addSentenceAfter(host || rootEl.querySelector('[data-sentence-id]'), rootEl);
+      return;
+    }
+    if (cmd === 'delete-sentence') {
+      if (host) deleteSentenceHost(host, rootEl);
+      return;
+    }
+
     if (!host) return;
 
     if (cmd === 'align-left') setAlignment(host, 'left');
@@ -512,7 +584,7 @@ function bumpIndent(host, delta) {
 function convertSentenceHost(host, mode) {
   const doc = host.ownerDocument;
   const id = host.getAttribute('data-sentence-id');
-  const text = plainTextPrefer(host);
+  const html = sentenceHtmlFromEl(host);
   const align = readAlignment(host);
   const indent = host.getAttribute('data-indent') || '0';
 
@@ -527,7 +599,7 @@ function convertSentenceHost(host, mode) {
       li.style.textAlign = align;
     }
     li.setAttribute('contenteditable', 'true');
-    li.textContent = text;
+    li.innerHTML = html;
     ul.appendChild(li);
     host.replaceWith(ul);
   } else if (mode === 'paragraph' && host.tagName === 'LI') {
@@ -540,15 +612,75 @@ function convertSentenceHost(host, mode) {
       p.style.textAlign = align;
     }
     p.setAttribute('contenteditable', 'true');
-    p.textContent = text;
+    p.innerHTML = html;
     const ul = host.parentElement;
     if (ul && ul.tagName === 'UL' && ul.children.length === 1) {
       ul.replaceWith(p);
     } else {
       host.replaceWith(p);
-      // If we left an empty ul, remove it
       if (ul && ul.tagName === 'UL' && !ul.querySelector('[data-sentence-id]')) ul.remove();
     }
+  }
+}
+
+function wrapSelectionInline(rootEl, tagName) {
+  const sel = rootEl.ownerDocument?.getSelection?.() || (typeof window !== 'undefined' ? window.getSelection() : null);
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  if (!rootEl.contains(range.commonAncestorContainer)) return;
+  const el = rootEl.ownerDocument.createElement(tagName);
+  try {
+    range.surroundContents(el);
+  } catch {
+    const frag = range.extractContents();
+    el.appendChild(frag);
+    range.insertNode(el);
+  }
+}
+
+function addSentenceAfter(host, rootEl) {
+  const doc = rootEl.ownerDocument;
+  const id = uid();
+  const p = doc.createElement('p');
+  p.className = 'wysiwyg-p';
+  p.setAttribute('data-sentence-id', id);
+  p.setAttribute('data-indent', '0');
+  p.setAttribute('contenteditable', 'true');
+  p.setAttribute('data-placeholder', 'New sentence…');
+  p.innerHTML = '';
+
+  if (host && rootEl.contains(host)) {
+    if (host.tagName === 'LI') {
+      const ul = host.closest('ul, ol');
+      if (ul) ul.after(p);
+      else host.after(p);
+    } else {
+      host.after(p);
+    }
+  } else {
+    const body = rootEl.querySelector('.wysiwyg-body') || rootEl;
+    body.appendChild(p);
+  }
+  try {
+    p.focus();
+    const sel = doc.getSelection?.();
+    if (sel) {
+      const range = doc.createRange();
+      range.selectNodeContents(p);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  } catch { /* ignore */ }
+}
+
+function deleteSentenceHost(host, rootEl) {
+  const hosts = rootEl.querySelectorAll('[data-sentence-id]');
+  if (hosts.length <= 1) return; // keep at least one
+  const ul = host.parentElement;
+  host.remove();
+  if (ul && (ul.tagName === 'UL' || ul.tagName === 'OL') && !ul.querySelector('[data-sentence-id]')) {
+    ul.remove();
   }
 }
 
@@ -565,25 +697,36 @@ export function sectionViewFromDraft(section, draft) {
   if (draft.content !== null && draft.content !== undefined && typeof view.content === 'string') {
     view.content = draft.content;
   }
-  if (Array.isArray(draft.sentences) && Array.isArray(view.sentences)) {
-    const byId = new Map(draft.sentences.map((s) => [s.id, s]));
-    view.sentences = view.sentences.map((sent) => {
-      const d = byId.get(sent.id);
-      if (!d) return sent;
+  if (Array.isArray(draft.sentences)) {
+    const prevById = new Map((view.sentences || []).map((sent) => [sent.id, sent]));
+    view.sentences = draft.sentences.map((d) => {
+      const prev = prevById.get(d.id);
+      if (prev) {
+        return {
+          ...prev,
+          text: d.text,
+          formatting: {
+            ...(prev.formatting || {}),
+            paragraphType: d.paragraphType,
+            alignment: d.alignment,
+            isBullet: d.isBullet,
+            listType: d.listType,
+            indentLevel: d.indentLevel,
+          },
+        };
+      }
       return {
-        ...sent,
-        text: d.text,
+        id: d.id,
+        text: d.text || '',
         formatting: {
-          ...(sent.formatting || {}),
-          paragraphType: d.paragraphType,
-          alignment: d.alignment,
-          isBullet: d.isBullet,
-          listType: d.listType,
-          indentLevel: d.indentLevel,
+          paragraphType: d.paragraphType || 'Normal',
+          alignment: d.alignment || '',
+          isBullet: !!d.isBullet,
+          listType: d.listType || '',
+          indentLevel: Number(d.indentLevel) || 0,
         },
       };
     });
-    // Also expose draft-shaped sentences for render shortcut
     view._draftSentences = draft.sentences;
   }
   if (Array.isArray(draft.commentary) && Array.isArray(view.commentary)) {

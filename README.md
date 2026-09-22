@@ -4,7 +4,7 @@ Static browser app for editing Unified Facilities Criteria (UFC) checkout packs 
 
 Sibling app: [Offline UFC Reader](https://github.com/njivy/ufc-offline-viewer). The Editor reuses the Reader content vocabulary and media paths without changing Reader pack formats.
 
-**Status (2026-09-21 PT):** Contract v0 frozen; editor **v0.1.2** adds structured WYSIWYG document editing for locked sections (same visual language for unlocked read-only).
+**Status (2026-09-22 PT):** Contract v0 frozen; editor **v0.1.3** adds bold/italic inline formatting and add/delete sentence on the locked WYSIWYG surface (built on v0.1.2 document editing).
 
 ## Run locally
 
@@ -27,7 +27,7 @@ Vite prints the local URL, usually `http://localhost:5173`.
 
 Use **Load image sample** to verify IMAGE rendering and caption/alternative-text editing.
 
-## WYSIWYG editing (v0.1.2)
+## WYSIWYG editing (v0.1.3)
 
 Locked sections open as a document-like surface (`contenteditable` structured markup), not raw field grids:
 
@@ -37,7 +37,7 @@ Locked sections open as a document-like surface (`contenteditable` structured ma
 - TABLE as a real HTML table (cells editable in place); caption and alt editable
 - IMAGE as a figure when the pack includes the blob; caption and alt editable (binary replace remains out of scope)
 
-A small toolbar supports paragraph vs bullet, indent/outdent, and alignment. Unlocked sections reuse the same renderer with `editable: false`. Draft state is parsed from the DOM before TOC re-renders so edits survive expand/collapse and search.
+A small toolbar supports **bold/italic**, paragraph vs bullet, indent/outdent, alignment, and **add/delete sentence**. Sentence `text` round-trips a sanitized HTML subset (`strong|b|em|i|br`). Unlocked sections reuse the same renderer with `editable: false`. Draft state is parsed from the DOM before TOC re-renders so edits survive expand/collapse and search; `draft.sentences` is rebuilt from DOM order (merge known ids, mint new, drop deleted).
 
 ## Editable content
 
@@ -81,7 +81,7 @@ npm run test:wysiwyg
 npm run build
 ```
 
-The pack round-trip check covers sentence formatting and IDs, TABLE field preservation, commentary IDs, IMAGE media-path loading, required rationales, and proposal ZIP structure. The WYSIWYG check round-trips render → DOM edit → parse for sentence ids, bullets, table cells, commentary, and image caption/alt.
+The pack round-trip check covers sentence formatting and IDs, TABLE field preservation, commentary IDs, IMAGE media-path loading, required rationales, and proposal ZIP structure. The WYSIWYG check round-trips render → DOM edit → parse for sentence ids, bullets, bold/italic HTML, add/delete sentences, table cells, commentary, and image caption/alt.
 
 ## Explicit separations
 
@@ -90,4 +90,4 @@ The pack round-trip check covers sentence formatting and IDs, TABLE field preser
 - Not Reader Criteria Change Request (CCR) link-out.
 - No live CMS API is required on the SME machine.
 - Exporting a proposal does not publish or establish UFC authority.
-- Out of scope for v0.1.2: IMAGE binary replace, Reader changes, live CMS.
+- Out of scope for v0.1.3: IMAGE binary replace, nested rich blocks beyond inline bold/italic, Reader changes, live CMS.

@@ -526,6 +526,11 @@ figure figcaption { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.35
   align-self: stretch;
 }
 
+.wysiwyg-doc strong,
+.wysiwyg-doc b { font-weight: 700; }
+.wysiwyg-doc em,
+.wysiwyg-doc i { font-style: italic; }
+
 .wysiwyg-sidebar {
   position: sticky;
   top: 0.75rem;

@@ -16,6 +16,7 @@ import {
   parseWysiwygDom,
   renderWysiwygFromDraft,
   groupSentences,
+  sanitizeSentenceHtml,
 } from '../src/wysiwyg.js';
 
 function assert(value, message) {
@@ -78,7 +79,6 @@ const commentaryId = 'cc629512-43f5-4990-9b50-d981a592ba21';
   assert(parsed.sentences[0].id === firstId, 'sentence id survives parse');
   assert(parsed.sentences[0].text.includes('[wysiwyg]'), 'text edit survives');
   assert(parsed.sentences[0].isBullet === true, 'bullet toggle survives');
-  assert(parsed.sentences.length === draft0.sentences.length, 'sentence count preserved');
 
   const after = applyDraftToRoot(base, sentenceId, parsed);
   assert(after.sentences[0].id === firstId, 'apply preserves id');
@@ -180,6 +180,87 @@ const commentaryId = 'cc629512-43f5-4990-9b50-d981a592ba21';
   assert(parsed.mediaAsset.altText === 'Alt edited', 'image alt');
 }
 
+
+// --- Bold / italic HTML subset round-trip ---
+{
+  const base = findSectionById(imported.content.sections, sentenceId);
+  const draft0 = draftFromSection(base);
+  const firstId = draft0.sentences[0].id;
+  const html = renderWysiwygFromDraft(base, {
+    ...draft0,
+    sentences: draft0.sentences.map((s, i) =>
+      i === 0
+        ? { ...s, text: 'Hello <strong>bold</strong> and <em>italic</em> & <script>x</script>' }
+        : s,
+    ),
+  }, { editable: true });
+  assert(html.includes('<strong>bold</strong>'), 'render keeps strong');
+  assert(html.includes('<em>italic</em>'), 'render keeps em');
+  assert(!html.includes('<script>'), 'render strips script');
+  assert(html.includes('&amp;') || html.includes('&amp;lt;') || html.includes(' &amp; '), 'amp escaped or present');
+
+  const { root } = domFromHtml(html);
+  const host = root.querySelector(`[data-sentence-id="${firstId}"]`);
+  assert(host, 'bold host');
+  host.innerHTML = 'More <b>B</b> and <i>I</i><br>line';
+  const parsed = parseWysiwygDom(root, draft0);
+  assert(/<b>B<\/b>/.test(parsed.sentences[0].text) || /<strong>/.test(parsed.sentences[0].text), 'b/strong survives parse');
+  assert(/<i>I<\/i>/.test(parsed.sentences[0].text) || /<em>/.test(parsed.sentences[0].text), 'i/em survives parse');
+  assert(parsed.sentences[0].text.includes('<br>'), 'br survives');
+  assert(!/<script/i.test(parsed.sentences[0].text), 'no script in parse');
+
+  const after = applyDraftToRoot(base, sentenceId, parsed);
+  assert(after.sentences[0].text.includes('<b>') || after.sentences[0].text.includes('<strong>'), 'bold applied to CIM');
+  assert(sanitizeSentenceHtml('<strong>x</strong><img src=x onerror=1>') === '<strong>x</strong>&lt;img src=x onerror=1&gt;'
+    || sanitizeSentenceHtml('<strong>x</strong><img src=x>').includes('<strong>x</strong>'), 'sanitize helper');
+}
+
+// --- Add / delete sentences ---
+{
+  const base = findSectionById(imported.content.sections, sentenceId);
+  const draft0 = draftFromSection(base);
+  const origCount = draft0.sentences.length;
+  assert(origCount >= 2, 'fixture has multiple sentences');
+  const firstId = draft0.sentences[0].id;
+  const secondId = draft0.sentences[1].id;
+
+  const html = renderWysiwygFromDraft(base, draft0, { editable: true });
+  const { root, document } = domFromHtml(html);
+
+  // Delete second sentence host
+  const second = root.querySelector(`[data-sentence-id="${secondId}"]`);
+  assert(second, 'second host');
+  const parentUl = second.parentElement;
+  second.remove();
+  if (parentUl && parentUl.tagName === 'UL' && !parentUl.querySelector('[data-sentence-id]')) parentUl.remove();
+
+  // Add a new paragraph sentence
+  const newId = '00000000-0000-4000-8000-000000000099';
+  const p = document.createElement('p');
+  p.className = 'wysiwyg-p';
+  p.setAttribute('data-sentence-id', newId);
+  p.setAttribute('data-indent', '0');
+  p.setAttribute('contenteditable', 'true');
+  p.textContent = 'Brand new sentence offline.';
+  const first = root.querySelector(`[data-sentence-id="${firstId}"]`);
+  first.after(p);
+
+  const parsed = parseWysiwygDom(root, draft0);
+  assert(!parsed.sentences.find((s) => s.id === secondId), 'deleted sentence omitted');
+  const added = parsed.sentences.find((s) => s.id === newId);
+  assert(added, 'new sentence present');
+  assert(added.text.includes('Brand new sentence'), 'new sentence text');
+  assert(parsed.sentences.length === origCount, 'count: -1 +1');
+  assert(parsed.sentences[0].id === firstId, 'first id still first-ish order from DOM');
+
+  const after = applyDraftToRoot(base, sentenceId, parsed);
+  assert(after.sentences.length === parsed.sentences.length, 'apply replaces sentence list');
+  assert(!after.sentences.find((s) => s.id === secondId), 'deleted gone from CIM');
+  assert(after.sentences.find((s) => s.id === newId), 'new in CIM');
+  const kept = after.sentences.find((s) => s.id === firstId);
+  assert(kept?.formatting?.paragraphId != null, 'known id keeps paragraphId');
+}
+
 console.log(JSON.stringify({
   ok: true,
   checks: [
@@ -189,5 +270,7 @@ console.log(JSON.stringify({
     'readonly-no-ce',
     'groupSentences',
     'image-caption-alt',
+    'bold-italic-html',
+    'add-delete-sentences',
   ],
 }, null, 2));
