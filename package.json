@@ -1,6 +1,6 @@
 {
   "name": "ufc-offline-editor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,9 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:fixture": "node scripts/build-sample-checkout.mjs",
-    "test:roundtrip": "node scripts/roundtrip-check.mjs"
+    "test:roundtrip": "node scripts/roundtrip-check.mjs",
+    "test:wysiwyg": "node scripts/wysiwyg-roundtrip-check.mjs",
+    "test": "npm run test:roundtrip && npm run test:wysiwyg"
   },
   "devDependencies": {
+    "linkedom": "^0.18.11",
     "vite": "^8.3.0"
   },
   "dependencies": {

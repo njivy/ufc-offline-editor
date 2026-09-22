@@ -12,15 +12,19 @@ import {
   escapeHtml,
   uid,
   nowIso,
-  sanitizeTableHtml,
-  normalizeMediaPath,
-  resolveMediaUrl,
   defaultExpandedIds,
   subtreeMatchesQuery,
   cloneSection,
 } from './content.js';
 import { hashSection } from './hash.js';
 import { importCheckoutPack, buildProposalPack } from './pack.js';
+import {
+  renderWysiwygHtml,
+  parseWysiwygDom,
+  renderWysiwygToolbarHtml,
+  bindWysiwygToolbar,
+  renderWysiwygFromDraft,
+} from './wysiwyg.js';
 
 const SAMPLE_ZIP = './fixtures/sample-checkout.zip';
 const SAMPLE_IMAGE_ZIP = './fixtures/sample-checkout-image.zip';
@@ -187,6 +191,7 @@ function syncEditForm() {
 }
 
 function selectSection(id) {
+  persistDraftIfEditing();
   state.selectedId = id;
   const path = findSectionPath(state.content?.sections || [], id);
   if (path) {
@@ -197,67 +202,18 @@ function selectSection(id) {
 }
 
 function readDraftFromDom() {
-  const draft = cloneSection(state.editDraft);
-  const heading = document.getElementById('edit-heading');
-  const label = document.getElementById('edit-label');
-  const content = document.getElementById('edit-content');
-  if (heading) draft.heading = heading.value;
-  if (label) draft.label = label.value;
-  if (content && draft.content !== null) draft.content = content.value;
-
-  draft.sentences = (draft.sentences || []).map((s) => {
-    const textEl = document.querySelector(`[data-sentence-id="${CSS.escape(s.id)}"][data-sent-field="text"]`);
-    const pt = document.querySelector(`[data-sentence-id="${CSS.escape(s.id)}"][data-sent-field="paragraphType"]`);
-    const al = document.querySelector(`[data-sentence-id="${CSS.escape(s.id)}"][data-sent-field="alignment"]`);
-    const bullet = document.querySelector(`[data-sentence-id="${CSS.escape(s.id)}"][data-sent-field="isBullet"]`);
-    const lt = document.querySelector(`[data-sentence-id="${CSS.escape(s.id)}"][data-sent-field="listType"]`);
-    const ind = document.querySelector(`[data-sentence-id="${CSS.escape(s.id)}"][data-sent-field="indentLevel"]`);
-    return {
-      ...s,
-      text: textEl ? textEl.value : s.text,
-      paragraphType: pt ? pt.value : s.paragraphType,
-      alignment: al ? al.value : s.alignment,
-      isBullet: bullet ? bullet.checked : s.isBullet,
-      listType: lt ? lt.value : s.listType,
-      indentLevel: ind ? Number(ind.value) || 0 : s.indentLevel,
-    };
-  });
-
-  draft.commentary = (draft.commentary || []).map((item, i) => {
-    const h = document.querySelector(`[data-note-kind="commentary"][data-note-idx="${i}"][data-note-field="heading"]`);
-    const c = document.querySelector(`[data-note-kind="commentary"][data-note-idx="${i}"][data-note-field="content"]`);
-    return {
-      heading: h ? h.value : item.heading,
-      content: c ? c.value : item.content,
-    };
-  });
-
-  draft.explanation = (draft.explanation || []).map((item, i) => {
-    const h = document.querySelector(`[data-note-kind="explanation"][data-note-idx="${i}"][data-note-field="heading"]`);
-    const c = document.querySelector(`[data-note-kind="explanation"][data-note-idx="${i}"][data-note-field="content"]`);
-    return {
-      heading: h ? h.value : item.heading,
-      content: c ? c.value : item.content,
-    };
-  });
-
-  if (draft.mediaAsset) {
-    const mc = document.getElementById('edit-media-content');
-    const cap = document.getElementById('edit-media-caption');
-    const alt = document.getElementById('edit-media-alt');
-    if (mc) draft.mediaAsset.content = mc.value;
-    if (cap) draft.mediaAsset.caption = cap.value;
-    if (alt) draft.mediaAsset.altText = alt.value;
+  const root = document.getElementById('wysiwyg-root');
+  let draft = cloneSection(state.editDraft);
+  if (root) {
+    draft = parseWysiwygDom(root, state.editDraft);
   }
-
   const rationaleEl = document.getElementById('edit-rationale');
   const rationale = rationaleEl ? rationaleEl.value : state.editRationale;
   return { draft, rationale };
 }
 
-
 function persistDraftIfEditing() {
-  if (!document.getElementById('edit-rationale') && !document.getElementById('edit-heading')) return;
+  if (!document.getElementById('wysiwyg-root') && !document.getElementById('edit-rationale')) return;
   try {
     const { draft, rationale } = readDraftFromDom();
     state.editDraft = draft;
@@ -396,208 +352,24 @@ function renderHome() {
   `;
 }
 
-function renderNotesReadonly(kind, items) {
-  if (!Array.isArray(items) || !items.length) return '';
-  const rows = items
-    .map((item) => {
-      const h = item?.heading ? `<div class="note-heading">${escapeHtml(item.heading)}</div>` : '';
-      const c = item?.content
-        ? `<div class="note-content">${escapeHtml(item.content)}</div>`
-        : '';
-      return `<div class="note-item">${h}${c}</div>`;
-    })
-    .join('');
-  return `<div class="readonly-block"><div class="readonly-label">${escapeHtml(kind)}</div>${rows}</div>`;
-}
-
-function renderMediaReadonly(media) {
-  if (!media || typeof media !== 'object') return '';
-  const type = String(media.type || '').toUpperCase();
-  if (type === 'TABLE') {
-    const cap = media.caption
-      ? `<figcaption>${escapeHtml(media.caption)}</figcaption>`
-      : '';
-    const alt = media.altText
-      ? `<p class="muted">Alt: ${escapeHtml(media.altText)}</p>`
-      : '';
-    const html = media.content ? sanitizeTableHtml(media.content) : '<p class="muted">No table HTML</p>';
-    return `<div class="readonly-block"><div class="readonly-label">TABLE</div><figure class="media-table">${cap}${alt}<div class="table-wrap">${html}</div></figure></div>`;
-  }
-  if (type === 'IMAGE') {
-    const path = normalizeMediaPath(media.url || media.sourcePath || '');
-    const url = resolveMediaUrl(state.mediaUrls, media.url || media.sourcePath || '');
-    const cap = media.caption ? `<figcaption>${escapeHtml(media.caption)}</figcaption>` : '';
-    const alt = media.altText || media.caption || 'Image';
-    if (url) {
-      return `<div class="readonly-block"><div class="readonly-label">IMAGE</div><figure class="media-image">${cap}<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" /><p class="muted media-path"><code>${escapeHtml(path)}</code></p></figure></div>`;
-    }
-    return `<div class="readonly-block"><div class="readonly-label">IMAGE</div><figure class="media-image media-missing">${cap}<div class="media-placeholder"><p class="media-missing-msg">Image not in pack</p>${path ? `<p class="muted media-path"><code>${escapeHtml(path)}</code></p>` : '<p class="muted">No storage path on mediaAsset</p>'}<p class="muted">Alt: ${escapeHtml(alt)}</p></div></figure></div>`;
-  }
-  return '';
-}
-
 function renderReadonlyPane(section) {
   if (!section) return '<p class="empty">Pick a section from the list.</p>';
-  const title = sectionTitle(section);
-  const labelLine =
-    section.label || section.heading
-      ? `<h3 class="readonly-title">${escapeHtml(title)}</h3>`
-      : `<h3 class="readonly-title">${escapeHtml(section.type || section.id)}</h3>`;
-
-  let sentencesHtml = '';
-  if (Array.isArray(section.sentences) && section.sentences.length) {
-    sentencesHtml = `<div class="readonly-block"><div class="readonly-label">Sentences</div><div class="readonly-sentences">${section.sentences
-      .map((s) => `<p class="readonly-sentence">${escapeHtml(s.text || '')}</p>`)
-      .join('')}</div></div>`;
-  }
-
-  let contentHtml = '';
-  if (typeof section.content === 'string' && section.content.trim()) {
-    contentHtml = `<div class="readonly-block"><div class="readonly-label">Content</div><div class="readonly-content">${escapeHtml(section.content)}</div></div>`;
-  }
-
+  const html = renderWysiwygHtml(section, { mediaUrls: state.mediaUrls, editable: false });
   return `
-    ${labelLine}
     <p class="meta-line">id: <code>${escapeHtml(section.id)}</code> · type: ${escapeHtml(section.type || '—')}
       <span class="badge readonly">read-only</span>
     </p>
-    ${sentencesHtml}
-    ${contentHtml}
-    ${renderNotesReadonly('Commentary', section.commentary)}
-    ${renderNotesReadonly('Explanation', section.explanation)}
-    ${renderMediaReadonly(section.mediaAsset)}
+    <div class="wysiwyg-surface" data-mode="readonly" id="wysiwyg-root">${html}</div>
   `;
-}
-
-
-function alignmentOptions(current) {
-  const opts = ['left', 'center', 'right', 'justify'];
-  if (current && !opts.includes(current)) opts.push(current);
-  return opts
-    .map((v) => `<option value="${escapeHtml(v)}" ${current === v ? 'selected' : ''}>${escapeHtml(v)}</option>`)
-    .join('');
-}
-
-function renderSentenceEditors(sentences) {
-  if (!sentences?.length) return '';
-  return `
-    <div class="field-group">
-      <h4>Sentences</h4>
-      ${sentences
-        .map(
-          (s, i) => `
-        <div class="sentence-editor" data-sentence-wrap="${escapeHtml(s.id)}">
-          <div class="field">
-            <label>Sentence ${i + 1} <code class="tiny">${escapeHtml(s.id)}</code></label>
-            <textarea data-sentence-id="${escapeHtml(s.id)}" data-sent-field="text" rows="3">${escapeHtml(s.text)}</textarea>
-          </div>
-          <div class="fmt-grid">
-            <div class="field">
-              <label>paragraphType</label>
-              <input data-sentence-id="${escapeHtml(s.id)}" data-sent-field="paragraphType" value="${escapeHtml(s.paragraphType)}" />
-            </div>
-            <div class="field">
-              <label>alignment</label>
-              <select data-sentence-id="${escapeHtml(s.id)}" data-sent-field="alignment">
-                ${alignmentOptions(s.alignment)}
-              </select>
-            </div>
-            <div class="field check-field">
-              <label><input type="checkbox" data-sentence-id="${escapeHtml(s.id)}" data-sent-field="isBullet" ${s.isBullet ? 'checked' : ''}/> isBullet</label>
-            </div>
-            <div class="field">
-              <label>listType</label>
-              <input data-sentence-id="${escapeHtml(s.id)}" data-sent-field="listType" value="${escapeHtml(s.listType)}" />
-            </div>
-            <div class="field">
-              <label>indentLevel</label>
-              <input type="number" data-sentence-id="${escapeHtml(s.id)}" data-sent-field="indentLevel" value="${escapeHtml(String(s.indentLevel ?? 0))}" />
-            </div>
-          </div>
-        </div>`
-        )
-        .join('')}
-    </div>`;
-}
-
-function renderNoteEditors(kind, items) {
-  if (!items?.length) return '';
-  return `
-    <div class="field-group">
-      <h4>${escapeHtml(kind)}</h4>
-      ${items
-        .map(
-          (item, i) => `
-        <div class="note-editor">
-          <div class="field">
-            <label>${escapeHtml(kind)} ${i + 1} heading</label>
-            <input data-note-kind="${escapeHtml(kind.toLowerCase())}" data-note-idx="${i}" data-note-field="heading" value="${escapeHtml(item.heading)}" />
-          </div>
-          <div class="field">
-            <label>${escapeHtml(kind)} ${i + 1} content</label>
-            <textarea data-note-kind="${escapeHtml(kind.toLowerCase())}" data-note-idx="${i}" data-note-field="content" rows="3">${escapeHtml(item.content)}</textarea>
-          </div>
-        </div>`
-        )
-        .join('')}
-    </div>`;
-}
-
-function renderMediaEditors(media) {
-  if (!media) return '';
-  const type = String(media.type || '').toUpperCase();
-  if (type === 'TABLE') {
-    return `
-      <div class="field-group">
-        <h4>TABLE mediaAsset</h4>
-        <div class="field">
-          <label for="edit-media-content">HTML content</label>
-          <textarea id="edit-media-content" rows="8">${escapeHtml(media.content || '')}</textarea>
-        </div>
-        <div class="field">
-          <label for="edit-media-caption">Caption</label>
-          <input id="edit-media-caption" value="${escapeHtml(media.caption || '')}" />
-        </div>
-        <div class="field">
-          <label for="edit-media-alt">Alt text</label>
-          <input id="edit-media-alt" value="${escapeHtml(media.altText || '')}" />
-        </div>
-        <div class="table-wrap preview">${sanitizeTableHtml(media.content || '')}</div>
-      </div>`;
-  }
-  if (type === 'IMAGE') {
-    // path resolution uses live section mediaAsset; draft may lack url — handled in pane with section
-    return `
-      <div class="field-group">
-        <h4>IMAGE mediaAsset</h4>
-        <div class="field">
-          <label for="edit-media-caption">Caption</label>
-          <input id="edit-media-caption" value="${escapeHtml(media.caption || '')}" />
-        </div>
-        <div class="field">
-          <label for="edit-media-alt">Alt text</label>
-          <input id="edit-media-alt" value="${escapeHtml(media.altText || '')}" />
-        </div>
-        <div id="image-preview-slot"></div>
-      </div>`;
-  }
-  return '';
 }
 
 function renderLockedPane(section, lockRootId, hasChange) {
   const draft = state.editDraft;
   const title = sectionTitle(section);
-  let imagePreview = '';
-  if (section.mediaAsset && String(section.mediaAsset.type || '').toUpperCase() === 'IMAGE') {
-    const path = normalizeMediaPath(section.mediaAsset.url || section.mediaAsset.sourcePath || '');
-    const url = resolveMediaUrl(state.mediaUrls, section.mediaAsset.url || section.mediaAsset.sourcePath || '');
-    const alt = draft.mediaAsset?.altText || section.mediaAsset.altText || section.mediaAsset.caption || 'Image';
-    if (url) {
-      imagePreview = `<figure class="media-image"><img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" /><p class="muted media-path"><code>${escapeHtml(path)}</code></p></figure>`;
-    } else {
-      imagePreview = `<div class="media-placeholder"><p class="media-missing-msg">Image not in pack</p>${path ? `<p class="muted"><code>${escapeHtml(path)}</code></p>` : ''}</div>`;
-    }
-  }
+  const docHtml = renderWysiwygFromDraft(section, draft, {
+    mediaUrls: state.mediaUrls,
+    editable: true,
+  });
 
   return `
     <h3>
@@ -609,38 +381,19 @@ function renderLockedPane(section, lockRootId, hasChange) {
       id: <code>${escapeHtml(section.id)}</code> · type: ${escapeHtml(section.type || '—')}
       · change root: <code>${escapeHtml(lockRootId)}</code>
     </p>
-    <p class="hint-inline">Edits save against the nearest locked root; the full root subtree is exported as <code>afterSection</code>.</p>
-
-    <div class="field">
-      <label for="edit-heading">Heading</label>
-      <input id="edit-heading" value="${escapeHtml(draft.heading)}" />
-    </div>
-    <div class="field">
-      <label for="edit-label">Label</label>
-      <input id="edit-label" value="${escapeHtml(draft.label)}" />
-    </div>
-    ${
-      draft.content !== null
-        ? `<div class="field">
-        <label for="edit-content">Content</label>
-        <textarea id="edit-content" rows="4">${escapeHtml(draft.content)}</textarea>
-      </div>`
-        : ''
-    }
-    ${renderSentenceEditors(draft.sentences)}
-    ${renderNoteEditors('Commentary', draft.commentary)}
-    ${renderNoteEditors('Explanation', draft.explanation)}
-    ${renderMediaEditors(draft.mediaAsset)}
-    ${imagePreview}
-
-    <div class="field">
-      <label for="edit-rationale">Rationale (required)</label>
-      <textarea id="edit-rationale" placeholder="Why is this change proposed?">${escapeHtml(state.editRationale)}</textarea>
-      <div class="hint">Every tracked change must include a non-empty rationale before export.</div>
-    </div>
-    <div class="actions">
-      <button type="button" class="primary" id="btn-save-change">Save tracked change</button>
-      <button type="button" id="btn-discard" ${hasChange ? '' : 'disabled'}>Discard change</button>
+    <p class="hint-inline">Document surface edits save against the nearest locked root; the full root subtree is exported as <code>afterSection</code>.</p>
+    ${renderWysiwygToolbarHtml()}
+    <div class="wysiwyg-layout">
+      <div class="wysiwyg-surface" data-mode="edit" id="wysiwyg-root">${docHtml}</div>
+      <aside class="wysiwyg-sidebar">
+        <h4>Rationale (required)</h4>
+        <textarea id="edit-rationale" placeholder="Why is this change proposed?">${escapeHtml(state.editRationale)}</textarea>
+        <div class="hint">Every tracked change must include a non-empty rationale before export.</div>
+        <div class="actions">
+          <button type="button" class="primary" id="btn-save-change">Save tracked change</button>
+          <button type="button" id="btn-discard" ${hasChange ? '' : 'disabled'}>Discard change</button>
+        </div>
+      </aside>
     </div>
   `;
 }
@@ -792,7 +545,7 @@ function renderEditor() {
           </div>
         </div>
 
-        <div class="card section-pane">
+        <div class="card section-pane wysiwyg-pane">
           ${paneBody}
         </div>
 
@@ -906,6 +659,27 @@ function bind() {
   wireAuthor('author-id', 'id');
   wireAuthor('author-name', 'displayName');
   wireAuthor('author-email', 'email');
+
+  const wyRoot = document.getElementById('wysiwyg-root');
+  const wyToolbar = document.querySelector('.wysiwyg-toolbar');
+  if (wyRoot && wyToolbar) {
+    bindWysiwygToolbar(wyToolbar, wyRoot);
+  }
+  if (wyRoot && wyRoot.getAttribute('data-mode') === 'edit') {
+    const sync = () => {
+      try {
+        const { draft, rationale } = readDraftFromDom();
+        state.editDraft = draft;
+        state.editRationale = rationale;
+      } catch {
+        /* ignore */
+      }
+    };
+    wyRoot.addEventListener('blur', sync, true);
+    wyRoot.addEventListener('input', () => {
+      /* keep live draft lightly; full parse on blur/save/toc */
+    });
+  }
 }
 
 render();
